@@ -1,0 +1,22 @@
+{
+  "name": "nebius-guard",
+  "version": "1.0.0",
+  "description": "Zero-latency streaming security proxy and tool boundary firewall for NVIDIA Nemotron models on Nebius AI Studio",
+  "main": "src/nebius_guard.mjs",
+  "type": "module",
+  "scripts": {
+    "test": "node test/nebius_guard.test.mjs",
+    "demo": "node demo.mjs"
+  },
+  "keywords": [
+    "nebius",
+    "nvidia",
+    "nemotron",
+    "agentic-ai",
+    "security-firewall",
+    "streaming-proxy",
+    "ssrf-prevention"
+  ],
+  "author": "Siddharth Srivastava (sidsri14)",
+  "license": "MIT"
+}
