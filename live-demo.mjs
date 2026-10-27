@@ -1,4 +1,18 @@
 import { NebiusGuard } from './src/nebius_guard.mjs';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+const localEnvPath = fileURLToPath(new URL('.env.local', import.meta.url));
+if (existsSync(localEnvPath)) {
+  if (typeof process.loadEnvFile !== 'function') {
+    throw new Error('This Node runtime cannot load .env.local. Export NEBIUS_API_KEY in your shell or use a current Node runtime.');
+  }
+  try {
+    process.loadEnvFile(localEnvPath);
+  } catch {
+    throw new Error('Could not load the private .env.local file. Check its permissions and format locally.');
+  }
+}
 
 const apiKey = process.env.NEBIUS_API_KEY || process.env.NEBIUS_TOKEN_FACTORY_KEY;
 if (!apiKey) {

@@ -1,4 +1,39 @@
 import crypto from 'node:crypto';
+import { isIP } from 'node:net';
+
+function isPrivateIpv4(host) {
+  const [a, b] = host.split('.').map(Number);
+  return a === 0 || a === 10 || a === 127 ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 100 && b >= 64 && b <= 127) || a >= 224;
+}
+
+function isBlockedNetworkHost(hostname) {
+  const host = hostname.replace(/^\[|\]$/g, '').replace(/\.$/, '').toLowerCase();
+  if (host === 'localhost' || host.endsWith('.localhost') || host === 'metadata.google.internal') return true;
+  if (isIP(host) === 4) return isPrivateIpv4(host);
+  if (isIP(host) !== 6) return false;
+
+  // WHATWG URL parsing canonicalizes embedded dotted IPv4 to hexadecimal words.
+  const halves = host.split('::');
+  const left = halves[0] ? halves[0].split(':') : [];
+  const right = halves[1] ? halves[1].split(':') : [];
+  const words = (halves.length === 2
+    ? [...left, ...Array(8 - left.length - right.length).fill('0'), ...right]
+    : left).map(word => Number.parseInt(word, 16));
+  const zeroPrefix = words.slice(0, 7).every(word => word === 0);
+  if (zeroPrefix && words[7] <= 1) return true; // Unspecified and loopback.
+  if ((words[0] & 0xfe00) === 0xfc00 || (words[0] & 0xffc0) === 0xfe80) return true;
+  if ((words[0] & 0xff00) === 0xff00) return true; // Multicast is not a public tool destination.
+  const mappedIpv4 = words.slice(0, 5).every(word => word === 0) && words[5] === 0xffff;
+  const compatibleIpv4 = words.slice(0, 6).every(word => word === 0);
+  if (mappedIpv4 || compatibleIpv4) {
+    return isPrivateIpv4(`${words[6] >> 8}.${words[6] & 255}.${words[7] >> 8}.${words[7] & 255}`);
+  }
+  return false;
+}
 
 export class NebiusGuard {
   constructor(options = {}) {
@@ -7,7 +42,7 @@ export class NebiusGuard {
       throw new Error('ERR_NEBIUS_ENDPOINT_MUST_BE_HTTPS');
     }
     this.nebiusEndpoint = endpoint.toString().replace(/\/$/, '');
-    this.defaultModel = options.defaultModel || 'nvidia/Nemotron-3_5-Lightning';
+    this.defaultModel = options.defaultModel || 'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B';
     this.apiKey = options.apiKey || '';
     this.fetchImpl = options.fetchImpl || globalThis.fetch;
     this.requestTimeoutMs = options.requestTimeoutMs || 60000;
@@ -23,9 +58,10 @@ export class NebiusGuard {
     this.circuitBreakerTripped = false;
   }
 
-  _inferenceCacheKey(prompt, model, temperature, maxTokens) {
+  _inferenceCacheKey(prompt, model, temperature, maxTokens, apiKey) {
+    const credentialHash = crypto.createHash('sha256').update(apiKey).digest('hex');
     return crypto.createHash('sha256')
-      .update(JSON.stringify({ prompt, model, temperature, maxTokens }))
+      .update(JSON.stringify({ prompt, model, temperature, maxTokens, credentialHash }))
       .digest('hex');
   }
 
@@ -62,13 +98,27 @@ export class NebiusGuard {
   async _readJson(response) {
     const declaredLength = Number(response.headers.get('content-length') || 0);
     if (declaredLength > this.maxResponseBytes) {
+      try { await response.body?.cancel(); } catch {}
       throw new Error('ERR_NEBIUS_RESPONSE_TOO_LARGE');
     }
 
-    const text = await response.text();
-    if (Buffer.byteLength(text, 'utf8') > this.maxResponseBytes) {
-      throw new Error('ERR_NEBIUS_RESPONSE_TOO_LARGE');
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('ERR_NEBIUS_INVALID_JSON');
+    const chunks = [];
+    let receivedBytes = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        receivedBytes += value.byteLength;
+        if (receivedBytes > this.maxResponseBytes) throw new Error('ERR_NEBIUS_RESPONSE_TOO_LARGE');
+        chunks.push(value);
+      }
+    } finally {
+      try { await reader.cancel(); } catch {}
+      reader.releaseLock();
     }
+    const text = Buffer.concat(chunks, receivedBytes).toString('utf8');
 
     try {
       return JSON.parse(text);
@@ -119,8 +169,10 @@ export class NebiusGuard {
   }
 
   async complete({ prompt, model = this.defaultModel, apiKey, temperature = 0.2, maxTokens = 512, signal } = {}) {
+    const key = this._requireApiKey(apiKey);
+    if (signal?.aborted) throw new Error('ERR_NEBIUS_REQUEST_ABORTED');
     const inspection = this.inspectPrompt(prompt, {
-      cacheKey: this._inferenceCacheKey(prompt, model, temperature, maxTokens)
+      cacheKey: this._inferenceCacheKey(prompt, model, temperature, maxTokens, key)
     });
     if (!inspection.passed) throw new Error(inspection.reason);
     if (inspection.cached) {
@@ -128,7 +180,7 @@ export class NebiusGuard {
     }
 
     const request = await this._request('/chat/completions', {
-      apiKey,
+      apiKey: key,
       method: 'POST',
       signal,
       body: {
@@ -147,12 +199,19 @@ export class NebiusGuard {
         throw new Error('ERR_NEBIUS_INVALID_COMPLETION_RESPONSE');
       }
 
-      const sanitizer = this.createStreamSanitizer(`nebius-completion-${Date.now()}`);
-      const checked = sanitizer.processChunk(content);
-      sanitizer.close();
-      if (checked.drop) throw new Error(checked.reason);
+      const sanitizer = this.createStreamSanitizer(`nebius-completion-${crypto.randomUUID()}`);
+      let safeContent;
+      try {
+        const checked = sanitizer.processChunk(content);
+        if (checked.drop) throw new Error(checked.reason);
+        const tail = sanitizer.flush();
+        if (tail.drop) throw new Error(tail.reason);
+        safeContent = checked.chunk + tail.chunk;
+      } finally {
+        sanitizer.close();
+      }
 
-      this.saveCache(inspection.cacheKey, content);
+      this.saveCache(inspection.cacheKey, safeContent);
       this._appendAudit('LIVE_INFERENCE_COMPLETED', {
         model,
         responseId: typeof payload.id === 'string' ? payload.id : null,
@@ -162,7 +221,7 @@ export class NebiusGuard {
       return {
         source: 'nebius-token-factory',
         model,
-        content,
+        content: safeContent,
         usage: payload.usage || null,
         responseId: typeof payload.id === 'string' ? payload.id : null
       };
@@ -180,8 +239,10 @@ export class NebiusGuard {
     signal,
     onChunk = () => {}
   } = {}) {
+    const key = this._requireApiKey(apiKey);
+    if (signal?.aborted) throw new Error('ERR_NEBIUS_REQUEST_ABORTED');
     const inspection = this.inspectPrompt(prompt, {
-      cacheKey: this._inferenceCacheKey(prompt, model, temperature, maxTokens)
+      cacheKey: this._inferenceCacheKey(prompt, model, temperature, maxTokens, key)
     });
     if (!inspection.passed) throw new Error(inspection.reason);
     if (inspection.cached) {
@@ -190,7 +251,7 @@ export class NebiusGuard {
     }
 
     const request = await this._request('/chat/completions', {
-      apiKey,
+      apiKey: key,
       method: 'POST',
       signal,
       body: {
@@ -209,7 +270,7 @@ export class NebiusGuard {
     }
 
     const decoder = new TextDecoder();
-    const sanitizer = this.createStreamSanitizer(`nebius-${Date.now()}`);
+    const sanitizer = this.createStreamSanitizer(`nebius-${crypto.randomUUID()}`);
     let buffer = '';
     let content = '';
     let receivedBytes = 0;
@@ -226,6 +287,9 @@ export class NebiusGuard {
       } catch {
         throw new Error('ERR_NEBIUS_INVALID_STREAM_EVENT');
       }
+      if (payload && Object.hasOwn(payload, 'error')) {
+        throw new Error('ERR_NEBIUS_STREAM_PROVIDER_ERROR');
+      }
 
       const delta = payload?.choices?.[0]?.delta?.content;
       if (typeof delta !== 'string' || delta.length === 0) return false;
@@ -235,8 +299,10 @@ export class NebiusGuard {
         throw new Error(checked.reason);
       }
 
-      content += delta;
-      await onChunk(delta);
+      if (checked.chunk) {
+        content += checked.chunk;
+        await onChunk(checked.chunk);
+      }
       return false;
     };
 
@@ -260,12 +326,22 @@ export class NebiusGuard {
       }
 
       buffer += decoder.decode();
-      if (!done && buffer.trim()) await handleEvent(buffer.trim());
+      if (!done && buffer.trim()) done = await handleEvent(buffer.trim());
+      if (!done) throw new Error('ERR_NEBIUS_INCOMPLETE_STREAM');
+      const tail = sanitizer.flush();
+      if (tail.drop) throw new Error(tail.reason);
+      if (tail.chunk) {
+        content += tail.chunk;
+        await onChunk(tail.chunk);
+      }
       if (!content) throw new Error('ERR_NEBIUS_EMPTY_STREAM');
 
       this.saveCache(inspection.cacheKey, content);
       this._appendAudit('LIVE_STREAM_COMPLETED', { model, outputCharacters: content.length });
       return { source: 'nebius-token-factory', model, content };
+    } catch (error) {
+      request.controller.abort(error);
+      throw error;
     } finally {
       sanitizer.close();
       try { await reader.cancel(); } catch {}
@@ -379,25 +455,43 @@ export class NebiusGuard {
       return { approved: false, violation: 'ERR_UNAUTHORIZED_TOOL', toolName: toolCall.name };
     }
 
-    const params = toolCall.arguments || {};
-    const paramStr = JSON.stringify(params);
+    let params = toolCall.arguments ?? {};
+    let paramStr;
+    try {
+      if (typeof params === 'string') params = JSON.parse(params);
+      if (!params || typeof params !== 'object' || Array.isArray(params)) {
+        return { approved: false, violation: 'ERR_MALFORMED_TOOL_CALL' };
+      }
+      paramStr = JSON.stringify(params);
+    } catch {
+      return { approved: false, violation: 'ERR_MALFORMED_TOOL_CALL' };
+    }
 
-    const ssrfPatterns = [
-      '169.254.169.254',
-      'metadata.google.internal',
-      'localhost',
-      '127.0.0.1',
-      '0.0.0.0',
-      '::1',
-      '10.0.',
-      '192.168.',
-      '172.16.'
-    ];
-
-    for (const p of ssrfPatterns) {
-      if (paramStr.includes(p)) {
-        this._appendAudit('SSRF_ATTEMPT_BLOCKED', { tool: toolCall.name, pattern: p });
-        return { approved: false, violation: 'ERR_SSRF_DETECTED', blockedTarget: p };
+    const pending = Object.entries(params);
+    while (pending.length > 0) {
+      const [name, value] = pending.pop();
+      if (value && typeof value === 'object') {
+        pending.push(...Object.entries(value));
+        continue;
+      }
+      if (typeof value !== 'string') continue;
+      const urls = /(?:url|uri|endpoint)$/i.test(name)
+        ? [value]
+        : [...value.matchAll(/(?:[a-z][a-z0-9+.-]*:)?\/\/[^\s"'<>]+/gi)].map(match => match[0]);
+      for (const target of urls) {
+        let url;
+        try {
+          url = new URL(target.startsWith('//') ? `https:${target}` : target);
+        } catch {
+          return { approved: false, violation: 'ERR_INVALID_TOOL_URL' };
+        }
+        if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+          return { approved: false, violation: 'ERR_UNSAFE_TOOL_URL' };
+        }
+        if (isBlockedNetworkHost(url.hostname)) {
+          this._appendAudit('SSRF_ATTEMPT_BLOCKED', { tool: toolCall.name, host: url.hostname });
+          return { approved: false, violation: 'ERR_SSRF_DETECTED', blockedTarget: url.hostname };
+        }
       }
     }
 
@@ -419,14 +513,17 @@ export class NebiusGuard {
   }
 
   createStreamSanitizer(streamId) {
-    let accumulated = '';
+    let pending = '';
     const secretPatterns = [
-      /sk-[A-Za-z0-9]{32,}/,
-      /AKIA[0-9A-Z]{16}/,
-      /ghp_[A-Za-z0-9]{36}/,
-      /nebius-[a-z0-9]{20,}/i,
-      /v1\.[A-Za-z0-9_-]{20,}/
+      { regex: /sk-[A-Za-z0-9]{32,}/, minimumLength: 35 },
+      { regex: /AKIA[0-9A-Z]{16}/, minimumLength: 20 },
+      { regex: /ghp_[A-Za-z0-9]{36}/, minimumLength: 40 },
+      { regex: /nebius-[a-z0-9]{20,}/i, minimumLength: 27 },
+      { regex: /v1\.[A-Za-z0-9_-]{20,}/, minimumLength: 23 }
     ];
+    // Retaining this suffix ensures no supported credential's initial byte can
+    // be emitted before enough following characters arrive to recognize it.
+    const holdback = Math.max(...secretPatterns.map(pattern => pattern.minimumLength)) - 1;
 
     this.activeStreams.set(streamId, { startedAt: Date.now(), aborted: false });
 
@@ -437,16 +534,30 @@ export class NebiusGuard {
           return { drop: true, reason: 'STREAM_ABORTED' };
         }
 
-        accumulated += chunk;
+        pending += chunk;
 
-        for (const regex of secretPatterns) {
-          if (regex.test(accumulated)) {
+        for (const { regex } of secretPatterns) {
+          if (regex.test(pending)) {
             this.abortStream(streamId);
             this._appendAudit('SECRET_LEAK_PREVENTED', { streamId });
             return { drop: true, reason: 'ERR_CREDENTIAL_LEAK_PREVENTED' };
           }
         }
 
+        let emitLength = Math.max(0, pending.length - holdback);
+        // Do not split a UTF-16 surrogate pair between callback chunks.
+        const last = pending.charCodeAt(emitLength - 1);
+        const next = pending.charCodeAt(emitLength);
+        if (last >= 0xd800 && last <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) emitLength -= 1;
+        const safe = pending.slice(0, emitLength);
+        pending = pending.slice(emitLength);
+        return { drop: false, chunk: safe };
+      },
+      flush: () => {
+        const stream = this.activeStreams.get(streamId);
+        if (!stream || stream.aborted) return { drop: true, reason: 'STREAM_ABORTED' };
+        const chunk = pending;
+        pending = '';
         return { drop: false, chunk };
       },
       close: () => {

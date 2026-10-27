@@ -4,19 +4,13 @@
 > **Target Track**: Coding & Agentic Engineering / Apps & Agents  
 > **Model selection**: discovers the live catalog and selects an available `nvidia/*` model
 > **Endpoint**: Nebius Token Factory (`https://api.tokenfactory.nebius.com/v1`)
-> **Status**: tested live-client and streaming implementation; a private API key is required for provider verification
+> **Status**: 29 passing tests and one real Token Factory stream verified October 28, 2026 using `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B`; [non-secret evidence](docs/live-verification-2026-10-28.md). This is a prototype, not a production-security guarantee.
 
 ---
 
-## ⚡ Executive Summary
+## What it implements
 
-Autonomous agents powered by open NVIDIA models can access critical systems through tool calling: databases, shell environments, web search, and payment rails. Direct inference without deterministic boundaries exposes applications to:
-1. **SSRF & Metadata Theft**: Adversarial prompts coaxing models to fetch AWS/GCP/Nebius internal metadata (`169.254.169.254`).
-2. **Command & Path Traversal Injection**: Malicious arguments executing shell commands or traversing directories (`../../etc/passwd`).
-3. **Runaway GPU Spend & Buffer Bloat**: Models generating hundreds of un-needed tokens after client disconnects or during runaway recursion loops.
-4. **Credential Exfiltration in SSE Streams**: Accidental emission of API keys or secrets in streaming token deltas.
-
-**`NebiusGuard`** is a zero-dependency streaming gateway between agent orchestrators and Nebius Token Factory. It performs prompt inspection before a request, validates tool boundaries, filters streamed deltas, aborts a live upstream stream when a credential pattern appears, and records a hash-linked audit trail.
+`NebiusGuard` is a zero-dependency Node.js client and boundary-checking library for Nebius Token Factory. It inspects prompts, validates caller-supplied tool arguments, filters supported credential patterns from streamed output, bounds response reads, and records a hash-linked audit trail. These are tested controls with specific limits, not a production-security guarantee.
 
 ---
 
@@ -24,38 +18,37 @@ Autonomous agents powered by open NVIDIA models can access critical systems thro
 
 ```mermaid
 flowchart LR
-    A[Agent Client / Orchestrator] -->|Prompt / Query| B[NebiusGuard Proxy]
-    B -->|Check Exact/Prefix Cache| C{Cache Hit?}
-    C -->|Yes (<0.1ms)| A
-    C -->|No| D[Prompt Sanitizer & Injection Guard]
-    D -->|Blocked| E[Drop & Audit Log]
-    D -->|Approved| F[Nebius Token Factory API]
-    F -->|NVIDIA model SSE stream| G[Streaming Token Filter]
-    G -->|Detect Leak / Abort| H[Fast-Cancel GPU Inference]
-    G -->|Sanitized Stream| A
-    F -->|Tool Call Emitted| I[Tool Boundary Firewall]
-    I -->|SSRF / Traversal / Command Check| J{Compliant?}
-    J -->|Yes| K[Execute Tool Safely]
-    J -->|No| L[Fail-Closed Rejection & Chain Hash]
+    A[Caller] --> B[Prompt and credential checks]
+    B --> C{Exact request cache}
+    C -->|Same credential namespace| A
+    C -->|Miss| D[Nebius Token Factory]
+    D --> E[Bounded response reader and credential filter]
+    E -->|Checked output| A
+    E -->|Invalid or incomplete output| F[Reject and cancel]
+    A -->|Explicit validateToolCall invocation| G[Static tool argument checks]
+    G --> H[Approval or rejection returned to caller]
 ```
 
-### 1. In-Flight Tool Boundary Firewall
-- Validates tool names against a strict whitelist.
-- Blocks SSRF targets: `169.254.169.254`, `metadata.google.internal`, private RFC1918 CIDRs (`10.0.0.0/8`, `192.168.0.0/16`, `172.16.0.0/12`), loopbacks (`127.0.0.1`, `localhost`).
-- Detects path traversals (`../`, `..\`) and shell injection metacharacters (`;`, `&&`, `||`, `` ` ``, `$()`).
+### Static tool argument checks
 
-### 2. Streaming Token Sanitizer
-- Intercepts Server-Sent Events (SSE) token by token.
-- Prevents credential emission (`sk-...`, `AKIA...`, `ghp_...`, `nebius-...`).
-- Aborts the active Token Factory request when a credential pattern appears in streamed deltas.
+- Checks tool names against a configured allowlist and accepts argument objects or JSON-encoded argument objects.
+- Parses URL-bearing fields and URLs embedded in nested string arguments. WHATWG URL normalization handles case and integer/hexadecimal IPv4 spellings before host checks.
+- Rejects localhost, the named cloud-metadata hostname, private RFC1918 IPv4 ranges, loopback/link-local/unspecified literals, private/link-local IPv6, and mapped private IPv4 addresses. Non-HTTP(S) destinations and URL-embedded credentials are rejected.
+- Retains checks for path traversal and selected shell metacharacters.
+- `validateToolCall` returns an approval/rejection; it does **not** execute tools or automatically inspect a model's tool calls. It does **not** resolve DNS or follow redirects. The caller's network executor must separately enforce resolved-address and redirect policies; a public-looking hostname can still resolve to a private address. Argument schemas and these pattern checks are not substitutes for sandboxing or safe APIs.
 
-### 3. Sub-Millisecond Exact Prompt Cache
-- SHA-256 keyed LRU prompt cache with configurable TTL.
-- Eliminates redundant inference calls for static agent prompts.
+### Streaming output and bounded reads
 
-### 4. Cryptographic Tamper-Evident Audit Chain
-- Every approval, rejection, and circuit breaker trip is linked in an append-only SHA-256 hash chain (`prevHash -> hash`).
-- Verifiable in real-time via `guard.verifyAuditChain()`.
+- Reads JSON and SSE bodies incrementally, with a default 1 MiB byte limit. JSON overflow and an oversized declared content length cancel the response body instead of draining it first.
+- Checks supported `sk-`, `AKIA`, `ghp_`, `nebius-`, and `v1.` credential patterns. To prevent a split credential prefix reaching `onChunk`, it retains the final 39 characters: the longest supported pattern's minimum match length minus one. Callback boundaries therefore differ from provider delta boundaries.
+- Emits only checked text and flushes the withheld suffix only after SSE `[DONE]`. An unexpected EOF rejects, discards pending text, cancels/aborts the request, and does not store a successful cache entry. Earlier benign streamed output cannot be recalled.
+- Pattern detection does not cover every secret format, encoding, or prompt-injection technique. Prompt inspection also uses a small, explicit pattern list.
+
+### Exact inference cache and audit trail
+
+- Uses an in-memory TTL `Map`, not an LRU or persistent cache; entry count is not currently bounded. No latency benchmark is claimed.
+- Inference keys include prompt, model, temperature, token limit, and a SHA-256 hash of the exact effective API credential. A nonblank credential is required before either inference path can use a cached result. Credentials are not written into audit details. Cache hits do not revalidate upstream credential revocation or account permissions.
+- Audit events are hash-linked and can be checked with `guard.verifyAuditChain()`. The in-memory log is not a durable, independently anchored or authenticated audit service.
 
 ---
 
@@ -78,9 +71,11 @@ Create a Token Factory API key in the official console, keep it out of chat and 
 ```bash
 export NEBIUS_API_KEY="..."
 # Optional: copy an exact NVIDIA model ID from your live catalog.
-export NEBIUS_MODEL="nvidia/Nemotron-3_5-Lightning"
+export NEBIUS_MODEL="nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"
 npm run demo:live
 ```
+
+Alternatively, put `NEBIUS_API_KEY=...` in a private `.env.local` beside `package.json` and run `npm run demo:live`. The live demo loads that file with Node's built-in `process.loadEnvFile` when available; existing exported environment values retain precedence. Both `.env` and `.env.local` are gitignored. If the installed Node runtime lacks `process.loadEnvFile`, use the shell-export route or a current Node 20/22/24 runtime. Never commit the file or paste its contents into chat.
 
 PowerShell:
 
@@ -94,6 +89,6 @@ npm run demo:live
 
 ### Evidence boundary
 
-- Tests prove request construction, bearer authentication, live response validation, SSE parsing across transport chunks, upstream abort behavior, bounded response sizes, caching, and audit-chain integrity.
+- Offline tests cover request construction, bearer headers, literal URL normalization, supported credential patterns across splits, cancellation during oversized reads, incomplete-stream rejection, credential-scoped caching, and audit-chain verification using injected transports.
 - A passing test is not evidence that this checkout made a real paid/provider request.
-- Do not describe the provider path as live-verified until `npm run demo:live` succeeds with the account owner's private key and the model/usage evidence is captured without secrets.
+- The October 28 [captured run](docs/live-verification-2026-10-28.md) separately verifies one authenticated catalog request and streamed completion. Model access can differ by account; `demo:live` discovers the current catalog instead of relying on the library's example default.
