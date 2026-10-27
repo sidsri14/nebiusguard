@@ -1,0 +1,37 @@
+✔ legitimate prompt is cached with a SHA-256 key (3.2004ms)
+✔ prompt injection is blocked before an upstream call (0.3491ms)
+✔ unauthorized and unsafe tool calls fail closed (1.4722ms)
+✔ stream sanitizer catches a credential split across chunks (0.7274ms)
+✔ circuit breaker blocks prompts until reset (0.3363ms)
+✔ model discovery uses the current Token Factory endpoint and bearer auth (27.4677ms)
+✔ provider endpoint must be HTTPS and cannot embed credentials (0.55ms)
+✔ non-streaming completion calls an NVIDIA model and records provider evidence (1.6274ms)
+✔ live inference cache is isolated by model and request parameters (2.6703ms)
+✔ completion refuses to run without a Token Factory key (0.7268ms)
+✔ provider HTTP failures are recorded without returning the response body (0.9028ms)
+✔ non-streaming provider output is checked for credentials before caching (1.0908ms)
+✔ live SSE path emits checked chunks and persists the final cache entry (1.6831ms)
+✔ live SSE path aborts when a provider stream emits a credential (0.6859ms)
+✔ oversized JSON responses fail closed (0.7496ms)
+✔ tool URL checks normalize private IPv4 forms and block complete private ranges (0.713ms)
+✔ tool URL checks reject private IPv6 and mapped IPv4 literals (5.8896ms)
+✔ tool URL validation handles nested and JSON-encoded arguments without blocking ordinary text (0.6396ms)
+✔ tool URL validation rejects malformed destinations and credentials without throwing on malformed arguments (0.3973ms)
+✔ all supported credential patterns are withheld at every split point (4.3945ms)
+✔ sanitizer preserves benign text and Unicode through arbitrary small splits and a final flush (0.5043ms)
+✔ JSON body reading cancels at the byte cap without draining an unbounded source (1.4665ms)
+✔ oversized declared JSON length cancels the body before the first pull (0.6789ms)
+✔ oversized SSE reading aborts and cancels before draining the source (0.5707ms)
+✔ incomplete SSE output is aborted without flushing withheld text or caching success (0.7513ms)
+✔ SSE DONE without a trailing newline still completes and flushes safe text (0.4538ms)
+✔ an in-band provider error rejects partial SSE output without caching or exposing the error body (0.7758ms)
+✔ inference cache is scoped to the exact effective API credential across both inference paths (0.9929ms)
+✔ a primed cache never bypasses the API-key requirement or an already-aborted signal (0.9613ms)
+ℹ tests 29
+ℹ suites 0
+ℹ pass 29
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 192.0553

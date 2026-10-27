@@ -1,0 +1,53 @@
+================================================================
+🛡️ NEBIUSGUARD: NVIDIA NEMOTRON STREAMING & AGENT FIREWALL
+   Offline deterministic boundary demo (no provider call)
+================================================================
+
+▶ Step 1: Evaluating Safe Agent Prompt & Caching...
+Prompt Status: {
+  passed: true,
+  cached: false,
+  cacheKey: '500669d9f8fca725dce0ca7073f7f189c7ed410af096f28a341cedb1b4575fbb'
+}
+Subsequent Prompt (Cache Hit): {
+  passed: true,
+  cached: true,
+  response: 'Risk level: MODERATE. Slippage cap: 0.5%'
+}
+
+▶ Step 2: Intercepting Jailbreak / Prompt Injection...
+Inspection Result: {
+  passed: false,
+  reason: 'ERR_PROMPT_INJECTION_DETECTED',
+  pattern: 'ignore previous instructions'
+}
+
+▶ Step 3: Validating Agent Tool Call (Legitimate)...
+Valid Tool Result: {
+  approved: true,
+  toolCall: {
+    name: 'fetch_live_fx',
+    arguments: { pair: 'SOL/USD', provider: 'pyth' }
+  }
+}
+
+▶ Step 4: Intercepting Malicious Tool Call (SSRF Attack)...
+SSRF Tool Intercepted: {
+  approved: false,
+  violation: 'ERR_SSRF_DETECTED',
+  blockedTarget: '169.254.169.254'
+}
+
+▶ Step 5: Streaming Token Sanitizer (Credential Protection)...
+Chunk 1: { drop: false, chunk: '' }
+Chunk 2 (Attempted key leak): { drop: true, reason: 'ERR_CREDENTIAL_LEAK_PREVENTED' }
+Chunk 3 (Post-abort): { drop: true, reason: 'STREAM_ABORTED' }
+
+▶ Step 6: Verifying Tamper-Evident SHA-256 Audit Trail...
+Audit Trail Valid: true (7 events logged)
+Latest Log Block Hash: 826bb10422a651801adf7fd9ec5633c2b80bfe06ed86dfeb0d6410b6d055185b
+
+================================================================
+✅ Offline boundary demo complete. Run `npm run demo:live` with a private
+   NEBIUS_API_KEY to verify the actual Token Factory streaming path.
+================================================================

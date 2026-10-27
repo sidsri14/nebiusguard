@@ -1,0 +1,62 @@
+{
+  "capturedAt": "2026-10-27T21:52:00.460Z",
+  "live": {
+    "sourceNote": "Actual authenticated command output captured by the parent agent on October 28, 2026; replayed here, not a new provider request.",
+    "command": "npm run demo:live",
+    "modelCount": 30,
+    "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+    "endpoint": "https://api.tokenfactory.nebius.com/v1",
+    "answer": "Blocking cloud-metadata SSRF calls stops attackers from harvesting sensitive instance credentials and other internal data that could be used for further compromise. It also prevents the gateway from being leveraged as a pivot point to bypass network security controls.",
+    "provider": "nebius-token-factory",
+    "auditChainValid": true,
+    "auditEvents": 2
+  },
+  "synthetic": {
+    "ssrf": [
+      {
+        "url": "http://169.254.169.254/latest/meta-data/",
+        "approved": false,
+        "violation": "ERR_SSRF_DETECTED",
+        "blockedTarget": "169.254.169.254"
+      },
+      {
+        "url": "http://2130706433/",
+        "approved": false,
+        "violation": "ERR_SSRF_DETECTED",
+        "blockedTarget": "127.0.0.1"
+      },
+      {
+        "url": "http://10.1.2.3/",
+        "approved": false,
+        "violation": "ERR_SSRF_DETECTED",
+        "blockedTarget": "10.1.2.3"
+      },
+      {
+        "url": "http://LOCALHOST/",
+        "approved": false,
+        "violation": "ERR_SSRF_DETECTED",
+        "blockedTarget": "localhost"
+      }
+    ],
+    "credential": {
+      "rejected": "ERR_CREDENTIAL_LEAK_PREVENTED",
+      "emittedCharacters": 0,
+      "cacheEntries": 0
+    },
+    "incomplete": {
+      "rejected": "ERR_NEBIUS_INCOMPLETE_STREAM",
+      "cacheEntries": 0,
+      "completionAudit": false
+    },
+    "cache": {
+      "syntheticAccounts": 2,
+      "providerCalls": 2,
+      "cacheEntries": 2
+    }
+  },
+  "tests": {
+    "count": 29,
+    "passed": 29,
+    "failed": 0
+  }
+}

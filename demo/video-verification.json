@@ -1,0 +1,27 @@
+{
+  "path": "D:\\distro\\nebius\\demo\\NebiusGuard-Nebius-NVIDIA-Demo.mp4",
+  "duration": 164.465,
+  "bytes": 4812689,
+  "sha256": "80b777b589c0473f2c4fcdaee123ea98d43307b283c1be16a98fcdc58a680a04",
+  "streams": [
+    {
+      "codec_type": "video",
+      "codec_name": "h264",
+      "width": 1440,
+      "height": 900,
+      "sample_rate": null,
+      "channels": null
+    },
+    {
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "width": null,
+      "height": null,
+      "sample_rate": "48000",
+      "channels": 2
+    }
+  ],
+  "voice": "en-US-AriaNeural",
+  "captions": 40,
+  "scenes": 9
+}

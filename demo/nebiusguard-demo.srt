@@ -1,0 +1,159 @@
+1
+00:00:00,000 --> 00:00:04,330
+NebiusGuard is a small Node.js client library for inspecting model streams
+
+2
+00:00:04,330 --> 00:00:08,660
+and tool arguments. This recording combines a captured real Nebius and
+
+3
+00:00:08,660 --> 00:00:12,989
+NVIDIA run with clearly labeled synthetic security cases. It is a
+
+4
+00:00:12,989 --> 00:00:15,351
+prototype, not a deployed customer service.
+
+5
+00:00:15,851 --> 00:00:20,471
+The client uses Nebius Token Factory for model discovery and chat
+
+6
+00:00:20,471 --> 00:00:25,091
+completions. Applications call a separate tool-validation boundary. Streamed responses pass through
+
+7
+00:00:25,091 --> 00:00:29,711
+credential-pattern checks before callbacks receive them. The audit log links events
+
+8
+00:00:29,711 --> 00:00:32,651
+with hashes; it is not immutable storage.
+
+9
+00:00:33,151 --> 00:00:37,316
+This is evidence from an actual authenticated run, not a mock
+
+10
+00:00:37,316 --> 00:00:41,481
+response. The client discovered thirty account-visible models and selected NVIDIA Nemotron
+
+11
+00:00:41,481 --> 00:00:45,646
+three Nano, thirty B, A three B. It then streamed an
+
+12
+00:00:45,646 --> 00:00:49,811
+answer through the real Token Factory endpoint. No API key appears
+
+13
+00:00:49,811 --> 00:00:50,947
+in this recording.
+
+14
+00:00:51,447 --> 00:00:55,741
+The returned answer explains why cloud-metadata requests can expose instance credentials
+
+15
+00:00:55,741 --> 00:01:00,034
+and create a network pivot. The run reports the Nebius Token
+
+16
+00:01:00,034 --> 00:01:04,328
+Factory provider path, two audit events, and a valid local hash
+
+17
+00:01:04,328 --> 00:01:08,621
+chain. This proves one integration smoke test, not model accuracy or
+
+18
+00:01:08,621 --> 00:01:09,402
+production performance.
+
+19
+00:01:09,902 --> 00:01:15,096
+These next cases are synthetic and never contact their targets. URL
+
+20
+00:01:15,096 --> 00:01:20,289
+normalization prevents alternate representations from bypassing the static checks. Metadata, integer-form
+
+21
+00:01:20,289 --> 00:01:25,483
+loopback, private ten-dot addresses, and uppercase localhost are all rejected. DNS
+
+22
+00:01:25,483 --> 00:01:29,260
+resolution and redirects still belong to the executor.
+
+23
+00:01:29,760 --> 00:01:34,457
+A streaming detector cannot recall bytes already delivered. The sanitizer therefore
+
+24
+00:01:34,457 --> 00:01:39,153
+retains a thirty-nine-character suffix, derived from the supported patterns. This synthetic
+
+25
+00:01:39,153 --> 00:01:43,850
+split-credential case rejects before any credential characters reach the callback. Benign
+
+26
+00:01:43,850 --> 00:01:47,692
+withheld text is released only after a complete stream.
+
+27
+00:01:48,192 --> 00:01:52,388
+If an SSE response ends without its terminal marker, the client
+
+28
+00:01:52,388 --> 00:01:56,583
+rejects it and creates no successful cache entry. JSON responses are
+
+29
+00:01:56,583 --> 00:02:00,778
+bounded while reading. The cache also separates otherwise identical requests by
+
+30
+00:02:00,778 --> 00:02:04,973
+hashed credential identity, so one account cannot reuse another account's inference
+
+31
+00:02:04,973 --> 00:02:05,355
+result.
+
+32
+00:02:05,855 --> 00:02:10,889
+The current suite passes all twenty-nine tests. It exercises every split
+
+33
+00:02:10,889 --> 00:02:15,924
+point for five supported credential formats, normalized private addresses, response bounds,
+
+34
+00:02:15,924 --> 00:02:20,958
+cancellation, incomplete streams, in-band errors, and account-separated cache behavior. The public
+
+35
+00:02:20,958 --> 00:02:25,077
+repository includes the deterministic demo and the test commands.
+
+36
+00:02:25,577 --> 00:02:29,739
+NebiusGuard makes these boundaries inspectable without claiming universal security. URL checks
+
+37
+00:02:29,739 --> 00:02:33,900
+do not pin DNS or enforce redirects, pattern checks are incomplete
+
+38
+00:02:33,900 --> 00:02:38,061
+by nature, and the audit and cache remain in memory. The
+
+39
+00:02:38,061 --> 00:02:42,223
+code and captured evidence are public at github dot com slash
+
+40
+00:02:42,223 --> 00:02:43,736
+sidsri fourteen slash nebiusguard.
