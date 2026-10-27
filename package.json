@@ -1,12 +1,13 @@
 {
   "name": "nebius-guard",
   "version": "1.0.0",
-  "description": "Zero-latency streaming security proxy and tool boundary firewall for NVIDIA Nemotron models on Nebius AI Studio",
+  "description": "Streaming security and tool-boundary gateway for NVIDIA models on Nebius Token Factory",
   "main": "src/nebius_guard.mjs",
   "type": "module",
   "scripts": {
-    "test": "node test/nebius_guard.test.mjs",
-    "demo": "node demo.mjs"
+    "test": "node --test test/nebius_guard.test.mjs",
+    "demo": "node demo.mjs",
+    "demo:live": "node live-demo.mjs"
   },
   "keywords": [
     "nebius",

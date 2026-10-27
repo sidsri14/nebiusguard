@@ -8,18 +8,19 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
+        os: [ubuntu-latest, windows-latest]
         node-version: [20.x, 22.x, 24.x]
 
     steps:
     - uses: actions/checkout@v4
     - name: Use Node.js ${{ matrix.node-version }}
-      uses: setup-node@v4
+      uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
     - name: Run Test Suite
       run: npm test
-    - name: Run Demo Simulation
+    - name: Run Offline Demo
       run: npm run demo

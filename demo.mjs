@@ -3,12 +3,12 @@ import { NebiusGuard } from './src/nebius_guard.mjs';
 async function main() {
   console.log('================================================================');
   console.log('🛡️ NEBIUSGUARD: NVIDIA NEMOTRON STREAMING & AGENT FIREWALL');
-  console.log('   Target: Nebius AI Studio & NVIDIA Open Source Models');
+  console.log('   Offline deterministic boundary demo (no provider call)');
   console.log('================================================================\n');
 
   const guard = new NebiusGuard({
-    nebiusEndpoint: 'https://api.studio.nebius.ai/v1',
-    defaultModel: 'nvidia/nemotron-4-340b-instruct',
+    nebiusEndpoint: 'https://api.tokenfactory.nebius.com/v1',
+    defaultModel: 'nvidia/Nemotron-3_5-Lightning',
     allowedTools: ['query_vector_db', 'fetch_live_fx', 'dispatch_alert']
   });
 
@@ -50,7 +50,8 @@ async function main() {
   console.log(`Latest Log Block Hash: ${guard.lastLogHash}`);
 
   console.log('\n================================================================');
-  console.log('✅ NebiusGuard Demo Complete: All boundaries strictly enforced.');
+  console.log('✅ Offline boundary demo complete. Run `npm run demo:live` with a private');
+  console.log('   NEBIUS_API_KEY to verify the actual Token Factory streaming path.');
   console.log('================================================================\n');
 }
 
