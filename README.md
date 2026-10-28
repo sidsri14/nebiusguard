@@ -6,6 +6,8 @@
 > **Endpoint**: Nebius Token Factory (`https://api.tokenfactory.nebius.com/v1`)
 > **Status**: 29 passing tests and one real Token Factory stream verified October 28, 2026 using `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B`; [non-secret evidence](docs/live-verification-2026-10-28.md). This is a prototype, not a production-security guarantee.
 
+[Watch the public narrated demo](https://youtu.be/SOOPTilt-HE) (2:44.465 source video; YouTube rounds to 2:45). The captured authenticated run and synthetic security cases are labeled separately. The [versioned release](https://github.com/sidsri14/nebiusguard/releases/tag/v0.2.0-hackathon) includes the original MP4, caption file and media-verification record.
+
 ---
 
 ## What it implements

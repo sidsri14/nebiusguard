@@ -1,5 +1,9 @@
 # Evidence-based NebiusGuard video
 
+Watch the [public YouTube demo](https://youtu.be/SOOPTilt-HE), or download the
+original MP4, captions and verification record from the
+[v0.2.0-hackathon release](https://github.com/sidsri14/nebiusguard/releases/tag/v0.2.0-hackathon).
+
 The demo is a narrated evidence replay, not a fabricated live application UI.
 The actual authenticated provider output was captured by the main agent on
 October 28, 2026. No API key is stored here, and these scripts do not make a
